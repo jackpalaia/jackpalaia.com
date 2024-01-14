@@ -3,11 +3,7 @@ export default function About() {
     <main>
       <h1>About</h1>
       <p>
-        I grew up in Littleton, Massachusetts, which is a small town northwest
-        of Boston. I got my BS from Georgia Tech in computer science in 2023,
-        and since have been working full time at LinkedIn on the team that
-        maintains Apache Zookeeper. My main professional interest lies in
-        distributed systems, but I enjoy all different types of programming.
+        I currently work at LinkedIn on Spiral, a distributed key-value database meant for storing metadata. I graduated from Georgia Tech with a BS in computer science in the summer of 2023.
       </p>
       <p>
         Outside of work, I like to play tennis, golf, and occasionally poker. I
