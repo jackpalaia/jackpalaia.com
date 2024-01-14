@@ -3,10 +3,7 @@ export default function Home() {
     <main>
       <h1>About</h1>
       <p>
-        I&apos;m currently finishing my BS in computer science at Georgia Tech. I
-        will graduate in summer 2023, and after will be working at LinkedIn as a
-        software engineer. My main professional interest lies in distributed
-        systems.
+        I currently work at LinkedIn on Spiral, a distributed key-value database meant for storing metadata. I graduated from Georgia Tech with a BS in computer science in the summer of 2023.
       </p>
       <p>
         Outside of work, I like to play tennis, golf, and poker. I also like to
