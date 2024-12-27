@@ -1,5 +1,4 @@
 :root {
-  --header: #fafafa;
   --content-width: 800px;
 }
 
@@ -17,52 +16,22 @@ body {
 
 a {
   color: inherit;
-  text-decoration: none;
-}
-
-/* @media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
-} */
-
-@keyframes cursor {
-  0% {
-    opacity: 0;
-  }
-  50% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
 }
 
 nav {
-  background-color: var(--header);
-  padding: 1rem;
   display: flex;
-  justify-content: center;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 100%;
+  width: calc(var(--content-width) + 2rem);
+  padding: 1rem;
+  margin: auto;
 
-  & div {
-    display: flex;
-    align-items: center;
-    width: var(--content-width);
-
-    .name {
-      margin-right: auto;
-      font-size: 1.25rem;
-      font-weight: 600;
-    }
-
-    .cursor {
-      animation: cursor 1s step-end infinite;
-    }
-
-    .about,
-    .projects {
-      margin-right: 2rem;
-    }
+  & .name {
+    display: inline-block;
+    font-size: 1.25rem;
+    font-weight: 600;
+    text-decoration: none;
   }
 }
 
@@ -81,15 +50,10 @@ main {
   & p {
     margin: 1rem 0;
   }
-
-  & a {
-    text-decoration: underline;
-  }
 }
 
 footer {
   display: flex;
   justify-content: center;
   color: grey;
-  padding: 1rem;
 }

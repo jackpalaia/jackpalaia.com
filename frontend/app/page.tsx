@@ -18,8 +18,7 @@ export default function Home() {
         If you want to contact me,{" "}
         <a href="mailto:jpalaia79@gmail.com">here&apos;s my email</a>. You can also
         reach out on{" "}
-        <a href="https://www.linkedin.com/in/jackpalaia">LinkedIn</a> or{" "}
-        <a href="https://www.instagram.com/jack.palaia/">Instagram</a>.
+        <a href="https://www.linkedin.com/in/jackpalaia">LinkedIn</a>.
       </p>
     </main>
   );
