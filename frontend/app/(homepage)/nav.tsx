@@ -1,5 +1,5 @@
 import Link from "next/link";
-import GitHubIcon from "./components/icons/GitHubIcon";
+import GitHubIcon from "./icons/GitHubIcon";
 
 export default function Nav() {
   return (

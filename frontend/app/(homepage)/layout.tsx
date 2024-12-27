@@ -1,7 +1,7 @@
-import { Inter } from "next/font/google";
 import Footer from "./footer";
 import "./globals.css";
 import Nav from "./nav";
+import { Inter } from "next/font/google";
 
 export const metadata = {
   title: "jackpalaia.com",
@@ -15,7 +15,7 @@ const inter = Inter({
 export default function RootLayout({
   children,
 }: {
-  children: React.ReactNode;
+  children: React.ReactNode
 }) {
   return (
     <html lang="en" className={inter.className}>
@@ -25,5 +25,5 @@ export default function RootLayout({
         <Footer />
       </body>
     </html>
-  );
+  )
 }
