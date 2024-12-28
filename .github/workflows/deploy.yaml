@@ -27,8 +27,6 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@3b5e8027fcad23fda98b2e3ac259d8d67585f671
         with:
-          context: ./frontend/
-          file: ./frontend/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: jackpalaia/website-frontend:latest
