@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chord Trainer</title>
+<style>
+  :root {
+    --bg: #f7f6f3; --fg: #222; --card: #fff; --accent: #2f6fed; --stop: #d9534f; --muted: #777;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181d; --fg: #eee; --card: #22252c; --accent: #6ea0ff; --stop: #e06c69; --muted: #999; }
+  }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: -apple-system, "Segoe UI", sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh; padding: 2rem 1rem; box-sizing: border-box;
+  }
+  h1 { font-size: 1.4rem; margin: 0 0 1.2rem; }
+  .panel {
+    background: var(--card); border-radius: 12px; padding: 1.2rem 1.5rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,.12); width: 100%; max-width: 480px;
+    display: flex; flex-direction: column; gap: .9rem;
+  }
+  label { display: flex; flex-direction: column; gap: .3rem; font-size: .9rem; }
+  button {
+    font-size: 1.1rem; padding: .7rem; border: none; border-radius: 8px;
+    background: var(--accent); color: #fff; cursor: pointer;
+  }
+  button.running { background: var(--stop); }
+  #display { margin-top: 2rem; text-align: center; }
+  #chord {
+    font-size: clamp(3.5rem, 18vw, 9rem); font-weight: 700; line-height: 1;
+    min-height: 1em; white-space: nowrap;
+  }
+  #chord .arrow { color: var(--muted); font-weight: 400; margin: 0 .15em; }
+  #chord .name { color: var(--muted); opacity: .45; transition: color .15s, opacity .15s; }
+  #chord .name.next { color: var(--accent); opacity: 1; }
+  .chord-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: .3rem .6rem; font-size: .95rem;
+  }
+  .chord-grid label { flex-direction: row; align-items: center; gap: .35rem; }
+  #timer { font-size: 1.6rem; color: var(--muted); margin-top: .5rem; font-variant-numeric: tabular-nums; }
+  #count { font-size: 3rem; font-weight: 600; margin-top: .5rem; font-variant-numeric: tabular-nums; }
+  #count small { display: block; font-size: 1rem; font-weight: 400; color: var(--muted); }
+  #hearing { font-size: 1rem; color: var(--muted); margin-top: .5rem; min-height: 1.2em; }
+  #status { font-size: .9rem; color: var(--muted); }
+  #best { font-size: 1rem; color: var(--muted); margin-top: .3rem; min-height: 1.2em; }
+  #best.new { color: var(--accent); font-weight: 600; }
+  #scores { margin-top: 2rem; width: 100%; max-width: 480px; }
+  #scores h2 { font-size: 1rem; margin: 0 0 .5rem; color: var(--muted); }
+  #scores table { width: 100%; border-collapse: collapse; font-size: .95rem; font-variant-numeric: tabular-nums; }
+  #scores th, #scores td { text-align: left; padding: .35rem .5rem; border-bottom: 1px solid rgba(127,127,127,.25); }
+  #scores th { font-weight: 600; color: var(--muted); }
+  #scores td:nth-child(2), #scores th:nth-child(2) { text-align: right; }
+  #scores .empty { color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<h1>Guitar Chord Trainer</h1>
+<div class="panel">
+  <label>Chords</label>
+  <div id="chordList" class="chord-grid"></div>
+  <label>Priority chords (up to 2)</label>
+  <div id="priorityList" class="chord-grid"></div>
+  <button id="startBtn">Start (1 minute)</button>
+  <div id="status"></div>
+</div>
+
+<div id="display">
+  <div id="chord"></div>
+  <div id="timer"></div>
+  <div id="count"></div>
+  <div id="best"></div>
+  <div id="hearing"></div>
+</div>
+
+<div id="scores">
+  <h2>High scores</h2>
+  <div id="scoreTable"></div>
+</div>
+
+<script>
+const ALL_CHORDS = ['A','Am','A7','B','Bm','B7','C','C7','Cmaj7','D','Dm','D7','E','Em','E7','F','Fm','F7','G','Gm','G7'];
+const DEFAULT_ON = new Set(['A','D','E','Em','Am']);
+const NOTE_INDEX = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+const QUALITY_INTERVALS = { '': [0,4,7], 'm': [0,3,7], '7': [0,4,7,10], 'maj7': [0,4,7,11], 'm7': [0,3,7,10] };
+
+const chordListEl = document.getElementById('chordList');
+for (const c of ALL_CHORDS) {
+  const label = document.createElement('label');
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.value = c;
+  cb.checked = DEFAULT_ON.has(c);
+  label.append(cb, c);
+  chordListEl.append(label);
+}
+
+const priorityListEl = document.getElementById('priorityList');
+const MAX_PRIORITY = 2;
+
+function selectedChords() {
+  return [...chordListEl.querySelectorAll('input:checked')].map(cb => cb.value);
+}
+
+function priorityChords() {
+  return [...priorityListEl.querySelectorAll('input:checked')].map(cb => cb.value);
+}
+
+function refreshPriorityList() {
+  const prev = new Set(priorityChords());
+  priorityListEl.innerHTML = '';
+  for (const c of selectedChords()) {
+    const label = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.value = c;
+    cb.checked = prev.has(c);
+    label.append(cb, c);
+    priorityListEl.append(label);
+  }
+}
+chordListEl.addEventListener('change', refreshPriorityList);
+priorityListEl.addEventListener('change', e => {
+  if (priorityChords().length > MAX_PRIORITY) e.target.checked = false;
+});
+refreshPriorityList();
+
+const chordEl = document.getElementById('chord');
+const timerEl = document.getElementById('timer');
+const countEl = document.getElementById('count');
+const hearingEl = document.getElementById('hearing');
+const statusEl = document.getElementById('status');
+const startBtn = document.getElementById('startBtn');
+const bestEl = document.getElementById('best');
+const scoreTableEl = document.getElementById('scoreTable');
+const SCORES_KEY = 'chordTrainerScores';
+const SCORES_URL = '/api/chords/scores';
+
+const DURATION = 60;
+let activePair = null;
+
+let running = false;
+let timerInterval = null;
+let rafId = null;
+let audioCtx = null;
+let micStream = null;
+let analyser = null;
+let changes = 0;
+
+function chordTemplate(name) {
+  const m = name.match(/^([A-G])([#b]?)(.*)$/);
+  let root = NOTE_INDEX[m[1]];
+  if (m[2] === '#') root += 1;
+  if (m[2] === 'b') root -= 1;
+  const intervals = QUALITY_INTERVALS[m[3]] || QUALITY_INTERVALS[''];
+  const t = new Float32Array(12);
+  for (const i of intervals) t[(root + i + 12) % 12] = 1;
+  return t;
+}
+
+function pickPair(chords, priority) {
+  const shuffle = arr => [...arr].sort(() => Math.random() - 0.5);
+  if (priority.length >= 2) return shuffle(priority.slice(0, 2));
+  if (priority.length === 1) {
+    const other = shuffle(chords.filter(c => c !== priority[0]))[0];
+    return shuffle([priority[0], other]);
+  }
+  return shuffle(chords).slice(0, 2);
+}
+
+function setNext(chord) {
+  for (const el of chordEl.querySelectorAll('.name')) {
+    el.classList.toggle('next', el.textContent === chord);
+  }
+}
+
+function formatTime(s) {
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+let scores = {};
+let serverAvailable = false;
+
+function loadLocalScores() {
+  try { return JSON.parse(localStorage.getItem(SCORES_KEY)) || {}; }
+  catch { return {}; }
+}
+
+async function loadScores() {
+  scores = loadLocalScores();
+  if (location.protocol.startsWith('http')) {
+    try {
+      const res = await fetch(SCORES_URL, { cache: 'no-store' });
+      if (res.ok) {
+        const fromFile = await res.json();
+        serverAvailable = true;
+        for (const [k, v] of Object.entries(scores)) {
+          if (!fromFile[k] || fromFile[k].best < v.best) fromFile[k] = v;
+        }
+        scores = fromFile;
+      }
+    } catch {}
+  }
+  if (!serverAvailable) {
+    statusEl.textContent = 'Scores saving to browser storage only. Scores are not being saved to the server.';
+  }
+  saveScores();
+}
+
+function saveScores() {
+  try { localStorage.setItem(SCORES_KEY, JSON.stringify(scores)); } catch {}
+  if (serverAvailable) {
+    fetch(SCORES_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(scores) })
+      .then(res => { if (!res.ok) throw new Error(res.statusText); })
+      .catch(e => { statusEl.textContent = `Could not save scores to file: ${e.message}`; });
+  }
+}
+
+function scoreKey(pair) {
+  return [...pair].sort().join('|');
+}
+
+function getBest(pair) {
+  return scores[scoreKey(pair)] || null;
+}
+
+function recordScore(pair, count) {
+  const key = scoreKey(pair);
+  const prev = scores[key];
+  if (prev && prev.best >= count) return false;
+  scores[key] = { pair: [...pair].sort(), best: count, date: new Date().toISOString().slice(0, 10) };
+  saveScores();
+  return true;
+}
+
+function renderScores() {
+  const rows = Object.values(scores)
+    .sort((a, b) => a.pair.join('|').localeCompare(b.pair.join('|')));
+  if (!rows.length) {
+    scoreTableEl.innerHTML = '<div class="empty">No scores yet. Finish a run to record one.</div>';
+    return;
+  }
+  const body = rows.map(r =>
+    `<tr><td>${r.pair.join(' / ')}</td><td>${r.best}</td><td>${r.date}</td></tr>`
+  ).join('');
+  scoreTableEl.innerHTML = `<table><thead><tr><th>Pair</th><th>Best</th><th>Date</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function renderBest(pair) {
+  const rec = getBest(pair);
+  bestEl.classList.remove('new');
+  bestEl.textContent = rec ? `Best for this pair: ${rec.best}` : 'No record yet for this pair';
+}
+
+function renderCount() {
+  countEl.innerHTML = `${changes}<small>chords</small>`;
+}
+
+async function startMic() {
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+  });
+  audioCtx = new AudioContext();
+  const src = audioCtx.createMediaStreamSource(micStream);
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 8192;
+  analyser.smoothingTimeConstant = 0.6;
+  src.connect(analyser);
+}
+
+function stopMic() {
+  if (rafId) cancelAnimationFrame(rafId);
+  rafId = null;
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  if (audioCtx) audioCtx.close();
+  micStream = audioCtx = analyser = null;
+}
+
+function startDetection(pair) {
+  const templates = pair.map(chordTemplate);
+  const freqData = new Float32Array(analyser.frequencyBinCount);
+  const timeData = new Float32Array(analyser.fftSize);
+  const binHz = audioCtx.sampleRate / analyser.fftSize;
+  const chroma = new Float32Array(12);
+
+  let current = null;
+  let expected = pair[0];
+  let candidate = null;
+  let stableFrames = 0;
+  const STABLE_NEEDED = 5;
+  const RMS_GATE = 0.01;
+  const MARGIN = 0.04;
+
+  function frame() {
+    analyser.getFloatTimeDomainData(timeData);
+    let sum = 0;
+    for (let i = 0; i < timeData.length; i++) sum += timeData[i] * timeData[i];
+    const rms = Math.sqrt(sum / timeData.length);
+
+    if (rms >= RMS_GATE) {
+      analyser.getFloatFrequencyData(freqData);
+      chroma.fill(0);
+      for (let i = 1; i < freqData.length; i++) {
+        const hz = i * binHz;
+        if (hz < 70 || hz > 1200) continue;
+        const mag = Math.pow(10, freqData[i] / 20);
+        const pc = Math.round(12 * Math.log2(hz / 440) + 69) % 12;
+        chroma[(pc + 12) % 12] += mag;
+      }
+      let norm = 0;
+      for (let i = 0; i < 12; i++) norm += chroma[i] * chroma[i];
+      norm = Math.sqrt(norm) || 1;
+
+      const scores = templates.map(t => {
+        let dot = 0, tn = 0;
+        for (let i = 0; i < 12; i++) { dot += chroma[i] * t[i]; tn += t[i]; }
+        return dot / (norm * Math.sqrt(tn));
+      });
+      const best = scores[0] >= scores[1] ? 0 : 1;
+      const detected = Math.abs(scores[0] - scores[1]) >= MARGIN ? pair[best] : null;
+
+      if (detected && detected === candidate) {
+        stableFrames++;
+      } else {
+        candidate = detected;
+        stableFrames = detected ? 1 : 0;
+      }
+
+      if (candidate && stableFrames >= STABLE_NEEDED && candidate !== current) {
+        current = candidate;
+        hearingEl.textContent = `Hearing: ${current}`;
+        if (current === expected) {
+          changes++;
+          renderCount();
+          expected = expected === pair[0] ? pair[1] : pair[0];
+          setNext(expected);
+        }
+      }
+    } else {
+      candidate = null;
+      stableFrames = 0;
+    }
+
+    rafId = requestAnimationFrame(frame);
+  }
+  rafId = requestAnimationFrame(frame);
+}
+
+function playEndSound() {
+  const ctx = new AudioContext();
+  const beeps = [[0, 880], [0.25, 880], [0.5, 1320]];
+  for (const [t, hz] of beeps) {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = hz;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime + t);
+    gain.gain.exponentialRampToValueAtTime(0.4, ctx.currentTime + t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t + 0.2);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(ctx.currentTime + t);
+    osc.stop(ctx.currentTime + t + 0.22);
+  }
+  setTimeout(() => ctx.close(), 1000);
+}
+
+function stop(finished) {
+  running = false;
+  clearInterval(timerInterval);
+  timerInterval = null;
+  stopMic();
+  startBtn.textContent = 'Start (1 minute)';
+  startBtn.classList.remove('running');
+  timerEl.textContent = finished ? 'Done!' : 'Stopped';
+  hearingEl.textContent = '';
+  setNext(null);
+  if (finished && activePair) {
+    playEndSound();
+    if (recordScore(activePair, changes)) {
+      bestEl.textContent = `New high score: ${changes}!`;
+      bestEl.classList.add('new');
+    }
+    renderScores();
+  }
+}
+
+async function start() {
+  const chords = selectedChords();
+  if (chords.length < 2) { statusEl.textContent = 'Pick at least two chords.'; return; }
+  const priority = priorityChords().filter(c => chords.includes(c));
+  statusEl.textContent = '';
+
+  try {
+    await startMic();
+  } catch (e) {
+    statusEl.textContent = `Microphone unavailable: ${e.message}`;
+    return;
+  }
+
+  const pair = pickPair(chords, priority);
+  activePair = pair;
+  changes = 0;
+  renderCount();
+  renderBest(pair);
+  chordEl.innerHTML = `<span class="name" id="name0">${pair[0]}</span><span class="arrow">&rarr;</span><span class="name" id="name1">${pair[1]}</span>`;
+  setNext(pair[0]);
+  hearingEl.textContent = 'Get ready...';
+
+  running = true;
+  startBtn.textContent = 'Stop';
+  startBtn.classList.add('running');
+
+  let warmup = 5;
+  timerEl.textContent = `Starting in ${warmup}`;
+  timerInterval = setInterval(() => {
+    warmup--;
+    if (warmup > 0) { timerEl.textContent = `Starting in ${warmup}`; return; }
+    clearInterval(timerInterval);
+
+    hearingEl.textContent = 'Listening...';
+    let remaining = DURATION;
+    timerEl.textContent = formatTime(remaining);
+    timerInterval = setInterval(() => {
+      remaining--;
+      timerEl.textContent = formatTime(remaining);
+      if (remaining <= 0) stop(true);
+    }, 1000);
+    startDetection(pair);
+  }, 1000);
+}
+
+loadScores().then(renderScores);
+
+startBtn.addEventListener('click', () => {
+  if (running) stop(false);
+  else start();
+});
+</script>
+</body>
+</html>

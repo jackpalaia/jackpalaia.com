@@ -1,9 +1,65 @@
-use axum::Router;
+use std::{env, io::ErrorKind, path::PathBuf, sync::Arc};
+
+use axum::{extract::State, http::StatusCode, routing::get, Json, Router};
+use serde_json::{json, Map, Value};
+use tokio::sync::Mutex;
 use tower_http::services::ServeDir;
+
+struct AppState {
+    scores_path: PathBuf,
+    write_lock: Mutex<()>,
+}
+
+async fn get_scores(State(state): State<Arc<AppState>>) -> Result<Json<Value>, StatusCode> {
+    let _guard = state.write_lock.lock().await;
+    match tokio::fs::read(&state.scores_path).await {
+        Ok(bytes) => serde_json::from_slice(&bytes)
+            .map(Json)
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR),
+        Err(e) if e.kind() == ErrorKind::NotFound => Ok(Json(Value::Object(Map::new()))),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR),
+    }
+}
+
+async fn put_scores(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, StatusCode> {
+    if !body.is_object() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let text = serde_json::to_string_pretty(&body).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let _guard = state.write_lock.lock().await;
+    if let Some(dir) = state.scores_path.parent() {
+        tokio::fs::create_dir_all(dir)
+            .await
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    }
+    let tmp = state.scores_path.with_extension("json.tmp");
+    tokio::fs::write(&tmp, text)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    tokio::fs::rename(&tmp, &state.scores_path)
+        .await
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(json!({ "ok": true })))
+}
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().nest_service("/", ServeDir::new("../frontend/out"));
+    let scores_path = env::var("CHORD_SCORES_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("/website/data/chord_scores.json"));
+    let state = Arc::new(AppState {
+        scores_path,
+        write_lock: Mutex::new(()),
+    });
+
+    let app = Router::new()
+        .route("/api/chords/scores", get(get_scores).post(put_scores))
+        .fallback_service(ServeDir::new("../frontend/out"))
+        .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     println!("listening on {}", listener.local_addr().unwrap());
