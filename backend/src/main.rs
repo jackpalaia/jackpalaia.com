@@ -62,7 +62,7 @@ async fn main() {
         .unwrap_or_else(|_| PathBuf::from("/website/data/chord_scores.json"));
     let selected_path = env::var("CHORD_SELECTED_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|| scores_path.with_file_name("chord_selected.json"));
+        .unwrap_or_else(|_| scores_path.with_file_name("chord_selected.json"));
 
     let app = Router::new()
         .route(
