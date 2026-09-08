@@ -85,16 +85,53 @@
 <script>
 const ALL_CHORDS = ['A','Am','A7','B','Bm','B7','C','C7','Cmaj7','D','Dm','D7','E','Em','E7','F','Fm','F7','G','Gm','G7'];
 const DEFAULT_ON = new Set(['A','D','E','Em','Am']);
+const SELECTED_KEY = 'chordTrainerSelected';
+
+function loadDefaultChords() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(SELECTED_KEY));
+    if (Array.isArray(stored) && stored.length) return new Set(stored);
+  } catch {}
+  return DEFAULT_ON;
+}
+
+function saveSelectedChords() {
+  const selected = selectedChords();
+  try { localStorage.setItem(SELECTED_KEY, JSON.stringify(selected)); } catch {}
+  if (serverAvailable) {
+    fetch(SELECTED_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(selected) })
+      .then(res => { if (!res.ok) throw new Error(res.statusText); })
+      .catch(e => { statusEl.textContent = `Could not save chord selection to file: ${e.message}`; });
+  }
+}
+
+function applySelectedChords(chords) {
+  const on = new Set(chords);
+  for (const cb of chordListEl.querySelectorAll('input')) cb.checked = on.has(cb.value);
+  refreshPriorityList();
+}
+
+async function loadSelectedChords() {
+  if (!location.protocol.startsWith('http')) return;
+  try {
+    const res = await fetch(SELECTED_URL, { cache: 'no-store' });
+    if (!res.ok) return;
+    const fromFile = await res.json();
+    if (Array.isArray(fromFile) && fromFile.length) applySelectedChords(fromFile);
+  } catch {}
+  saveSelectedChords();
+}
 const NOTE_INDEX = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
 const QUALITY_INTERVALS = { '': [0,4,7], 'm': [0,3,7], '7': [0,4,7,10], 'maj7': [0,4,7,11], 'm7': [0,3,7,10] };
 
 const chordListEl = document.getElementById('chordList');
+const initialOn = loadDefaultChords();
 for (const c of ALL_CHORDS) {
   const label = document.createElement('label');
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.value = c;
-  cb.checked = DEFAULT_ON.has(c);
+  cb.checked = initialOn.has(c);
   label.append(cb, c);
   chordListEl.append(label);
 }
@@ -123,7 +160,10 @@ function refreshPriorityList() {
     priorityListEl.append(label);
   }
 }
-chordListEl.addEventListener('change', refreshPriorityList);
+chordListEl.addEventListener('change', () => {
+  refreshPriorityList();
+  saveSelectedChords();
+});
 priorityListEl.addEventListener('change', e => {
   if (priorityChords().length > MAX_PRIORITY) e.target.checked = false;
 });
@@ -139,6 +179,7 @@ const bestEl = document.getElementById('best');
 const scoreTableEl = document.getElementById('scoreTable');
 const SCORES_KEY = 'chordTrainerScores';
 const SCORES_URL = '/api/chords/scores';
+const SELECTED_URL = '/api/chords/selected';
 
 const DURATION = 60;
 let activePair = null;
@@ -433,7 +474,7 @@ async function start() {
   }, 1000);
 }
 
-loadScores().then(renderScores);
+loadScores().then(renderScores).then(loadSelectedChords);
 
 startBtn.addEventListener('click', () => {
   if (running) stop(false);

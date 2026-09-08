@@ -5,14 +5,23 @@ use serde_json::{json, Map, Value};
 use tokio::sync::Mutex;
 use tower_http::services::ServeDir;
 
-struct AppState {
-    scores_path: PathBuf,
+struct JsonFile {
+    path: PathBuf,
     write_lock: Mutex<()>,
 }
 
-async fn get_scores(State(state): State<Arc<AppState>>) -> Result<Json<Value>, StatusCode> {
-    let _guard = state.write_lock.lock().await;
-    match tokio::fs::read(&state.scores_path).await {
+impl JsonFile {
+    fn new(path: PathBuf) -> Arc<Self> {
+        Arc::new(Self {
+            path,
+            write_lock: Mutex::new(()),
+        })
+    }
+}
+
+async fn get_json(State(file): State<Arc<JsonFile>>) -> Result<Json<Value>, StatusCode> {
+    let _guard = file.write_lock.lock().await;
+    match tokio::fs::read(&file.path).await {
         Ok(bytes) => serde_json::from_slice(&bytes)
             .map(Json)
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR),
@@ -21,26 +30,26 @@ async fn get_scores(State(state): State<Arc<AppState>>) -> Result<Json<Value>, S
     }
 }
 
-async fn put_scores(
-    State(state): State<Arc<AppState>>,
+async fn put_json(
+    State(file): State<Arc<JsonFile>>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
-    if !body.is_object() {
+    if !(body.is_object() || body.is_array()) {
         return Err(StatusCode::BAD_REQUEST);
     }
     let text = serde_json::to_string_pretty(&body).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
-    let _guard = state.write_lock.lock().await;
-    if let Some(dir) = state.scores_path.parent() {
+    let _guard = file.write_lock.lock().await;
+    if let Some(dir) = file.path.parent() {
         tokio::fs::create_dir_all(dir)
             .await
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     }
-    let tmp = state.scores_path.with_extension("json.tmp");
+    let tmp = file.path.with_extension("json.tmp");
     tokio::fs::write(&tmp, text)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    tokio::fs::rename(&tmp, &state.scores_path)
+    tokio::fs::rename(&tmp, &file.path)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     Ok(Json(json!({ "ok": true })))
@@ -51,15 +60,20 @@ async fn main() {
     let scores_path = env::var("CHORD_SCORES_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/website/data/chord_scores.json"));
-    let state = Arc::new(AppState {
-        scores_path,
-        write_lock: Mutex::new(()),
-    });
+    let selected_path = env::var("CHORD_SELECTED_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| scores_path.with_file_name("chord_selected.json"));
 
     let app = Router::new()
-        .route("/api/chords/scores", get(get_scores).post(put_scores))
-        .fallback_service(ServeDir::new("../frontend/out"))
-        .with_state(state);
+        .route(
+            "/api/chords/scores",
+            get(get_json).post(put_json).with_state(JsonFile::new(scores_path)),
+        )
+        .route(
+            "/api/chords/selected",
+            get(get_json).post(put_json).with_state(JsonFile::new(selected_path)),
+        )
+        .fallback_service(ServeDir::new("../frontend/out"));
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
     println!("listening on {}", listener.local_addr().unwrap());
