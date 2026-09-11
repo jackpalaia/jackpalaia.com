@@ -203,14 +203,28 @@ function chordTemplate(name) {
   return t;
 }
 
+function candidatePairs(chords, priority) {
+  if (priority.length >= 2) return [priority.slice(0, 2)];
+  const pairs = [];
+  if (priority.length === 1) {
+    for (const c of chords) if (c !== priority[0]) pairs.push([priority[0], c]);
+    return pairs;
+  }
+  for (let i = 0; i < chords.length; i++)
+    for (let j = i + 1; j < chords.length; j++) pairs.push([chords[i], chords[j]]);
+  return pairs;
+}
+
 function pickPair(chords, priority) {
   const shuffle = arr => [...arr].sort(() => Math.random() - 0.5);
-  if (priority.length >= 2) return shuffle(priority.slice(0, 2));
-  if (priority.length === 1) {
-    const other = shuffle(chords.filter(c => c !== priority[0]))[0];
-    return shuffle([priority[0], other]);
+  const pairs = candidatePairs(chords, priority);
+  const weights = pairs.map(p => 1 / (1 + (getBest(p)?.best ?? 0)));
+  let r = Math.random() * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pairs.length; i++) {
+    r -= weights[i];
+    if (r < 0) return shuffle(pairs[i]);
   }
-  return shuffle(chords).slice(0, 2);
+  return shuffle(pairs[pairs.length - 1]);
 }
 
 function setNext(chord) {
@@ -280,7 +294,7 @@ function recordScore(pair, count) {
 
 function renderScores() {
   const rows = Object.values(scores)
-    .sort((a, b) => a.pair.join('|').localeCompare(b.pair.join('|')));
+    .sort((a, b) => b.best - a.best || a.pair.join('|').localeCompare(b.pair.join('|')));
   if (!rows.length) {
     scoreTableEl.innerHTML = '<div class="empty">No scores yet. Finish a run to record one.</div>';
     return;
