@@ -1,35 +1,26 @@
-# Build NextJS frontend
-FROM node:18-alpine AS base
-
-# Install dependencies only when needed
-FROM base AS deps
+FROM node:22-alpine AS deps
 WORKDIR /website/frontend
-# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
-RUN apk add --no-cache libc6-compat
-
-COPY ./frontend/package.json ./frontend/package-lock.json ./
+COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
-# Rebuild the source code only when needed
-FROM base AS builder
+FROM node:22-alpine AS frontend
 WORKDIR /website/frontend
 COPY --from=deps /website/frontend/node_modules ./node_modules
-COPY ./frontend ./
+COPY frontend ./
 RUN npm run build
 
-# Run Rust backend server
-FROM rust
-
-WORKDIR /website
-
-COPY --from=builder /website/frontend/out ./frontend/out
-COPY ./backend ./backend
-
-
+FROM rust:1-bookworm AS backend
 WORKDIR /website/backend
-
+COPY backend/Cargo.toml backend/Cargo.lock ./
+RUN mkdir src && echo 'fn main() {}' > src/main.rs \
+    && cargo build --release \
+    && rm -rf src target/release/backend target/release/deps/backend-*
+COPY backend/src ./src
 RUN cargo build --release
 
+FROM debian:bookworm-slim
+WORKDIR /website/backend
+COPY --from=frontend /website/frontend/out /website/frontend/out
+COPY --from=backend /website/backend/target/release/backend ./backend
 EXPOSE 3000
-
-CMD ["./target/release/backend"]
+CMD ["./backend"]
